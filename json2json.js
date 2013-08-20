@@ -11,7 +11,7 @@
 //  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 var json2json = {
-	
+    
 	/* ---------------------------------------- Public Methods ------------------------------------------------ */
 	'transform': function(json, transform , options) {
 		
@@ -34,10 +34,11 @@ var json2json = {
 	'get':function(obj,name,options) {
 		
 		//Get the value from the object
-		var val = json2json._getValue(name,obj)
+		var val = json2json._getValue(name,obj);
 
 		//Force object into array if required
-		if(options.forceArray) val = [val];
+		if(!Array.isArray(val) && options)
+            if(options.forceArray) val = [val];
 
 		//Return the value
 		return( val );
@@ -157,7 +158,7 @@ var json2json = {
 	},
 	
 	'_clone':function(obj) {
-		if (null == obj || "object" != typeof obj) return obj;
+		if (null === obj || "object" != typeof obj) return obj;
 		var copy = obj.constructor();
 		for (var attr in obj) {
 			if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr];
