@@ -13,22 +13,17 @@
 var json2json = {
 	
 	/* ---------------------------------------- Public Methods ------------------------------------------------ */
-	'transform': function(json,transform,_options) {
+	'transform': function(json, transform , options) {
 		
-		//extend the options
-		var options = {};
-
-		options = json2json._extend(options,_options);
-		
-		var out;
+		var out = [];
 
 		//Make sure we have a transform & json object
-		if( transform !== undefined || json !== undefined ) {
+		if( transform !== undefined && json !== undefined ) {
 
 			//Normalize strings to JSON objects if necessary
 			var obj = typeof json === 'string' ? JSON.parse(json) : json;
 			
-			//Transform the object (using the options)
+			//Transform the object (using the option variables)
 			out = json2json._transform(obj, transform, options);
 		}
 		
@@ -36,8 +31,16 @@ var json2json = {
 	},
 	
 	//Get an objects value using the name as prop1.prop2.prop3
-	'get':function(obj,name) {
-		return( json2json._getValue(name,obj) );
+	'get':function(obj,name,options) {
+		
+		//Get the value from the object
+		var val = json2json._getValue(name,obj)
+
+		//Force object into array if required
+		if(options.forceArray) val = [val];
+
+		//Return the value
+		return( val );
 	},
 
 	/* ---------------------------------------- Private Methods ------------------------------------------------ */
@@ -58,8 +61,6 @@ var json2json = {
 				//Apply the transform to this object and append it to the results
 				var obj = json2json._apply(json[j], transform, j, options);
 				
-				//console.log(JSON.stringify(json[j]) + ' processed to ' +  JSON.stringify(obj) + ' with ' + JSON.stringify(transform));
-
 				//check to see what was returned (if array then concat otherwise add)
 				if(Array.isArray(obj)) out = out.concat(obj);
 				else out[out.length] = obj;
@@ -70,7 +71,7 @@ var json2json = {
 			//Apply the transform to this object and append it to the results
 			out = json2json._apply(json, transform, undefined, options);
 		}
-
+	
 		//Return the resulting elements
 		return(out);		
 	},
@@ -78,8 +79,8 @@ var json2json = {
 	//Extend options
 	'_extend':function(obj1,obj2){
 		var obj3 = {};
-		for (var attrname in obj1) { obj3[attrname] = obj1[attrname]; }
-		for (var attrname in obj2) { obj3[attrname] = obj2[attrname]; }
+		if(obj1 !== undefined) for (var attrname in obj1) { obj3[attrname] = obj1[attrname]; }
+		if(obj2 !== undefined) for (var attrname in obj2) { obj3[attrname] = obj2[attrname]; }
 		return obj3;
 	},
 
@@ -103,17 +104,17 @@ var json2json = {
 			
 			//Make a first pass and get the variables
 			var result = json2json._getVariables(obj,transform);
-			
+
 			//Set the new transform (without the variable definitions)
 			var _transform = result.transform;
 
 			//Expand the variables (if we have any)
-			// sets the variable array to [{'name';'value',..},..]
+			// sets the variable array to [{'name':'value',..},..]
 			var vars = json2json._expand(result.variables);
 
 			//Make a second pass set the variables
 			// Creates a new output array of objects with variables set 
-			out = json2json._setVariables(obj,_transform,vars);
+			out = json2json._setVariables(obj, _transform, vars, index, options);
 		}
 		
 		return(out);
@@ -224,8 +225,70 @@ var json2json = {
 		return(out);
 	},
 
+	//Set for a single variable combination
+	'_setVariable':function(obj, transform, variable, index, options) {
+
+		//return object
+		var nObj;
+
+		//check the transform
+		if(typeof transform === 'object') {
+			
+			//If this transform is an array then itterate over the array
+			if(Array.isArray(transform)) {
+				nObj = [];
+
+				for(var i=0; i < transform.length; i++)
+					nObj.push( json2json._setVariable(obj,transform[i],variable,index,options) );
+
+			} else
+			{
+				//Create a new object
+				nObj = {};
+
+				//Itterate over each prop in the transform
+				for(var prop in transform) {
+
+					//resolve the string variables $()
+					var name = json2json._resolveVariables(prop,variable);
+					
+					//finally resolve the object variables ${}
+					name = json2json._resolveObjects(name,obj);
+					
+					var type = typeof transform[prop];
+					
+					//extend the variables with the options (optional variables)
+					var vars = json2json._extend(options,variable);
+
+					//Check strings for variables
+					if( type === 'string') {
+					
+						//resolve the string variables $()
+						var value = json2json._resolveVariables(transform[prop],vars);
+						
+						//finally resolve the object variables ${}
+						value = json2json._resolveObjects(value,obj);
+
+						//add to the object
+						nObj[name] = value;
+					} else if(type === 'function'){
+						//Call the function to get the object value
+						nObj[name] = transform[prop].call(obj,obj,vars,index);
+
+					} else if(type === 'object'){
+
+						//Process the transform object with the variable
+						nObj[name] = json2json._setVariable(obj,transform[prop],variable,index,options);
+					}
+				}
+			}
+		}
+
+		return(nObj);
+	},
+
 	//Set the variables in the transform
-	'_setVariables':function(obj,transform,variables) {
+	'_setVariables':function(obj, transform, variables, index, options) {
 	
 		//Create a new array of output objects 
 		var out = [];
@@ -233,44 +296,11 @@ var json2json = {
 		//Itterate over each property in the transform
 		for(var i = 0; i < variables.length; i++) {
 			
-			//create a new object
-			var nObj = {};
-			
-			//Itterate over each prop in the transform
-			for(var prop in transform) {
-
-				//resolve the string variables $()
-				var name = json2json._resolveVariables(prop,variables[i]);
-				
-				//finally resolve the object variables ${}
-				name = json2json._resolveObjects(name,obj);
-				
-				var type = typeof transform[prop];
-				
-				//Check strings for variables
-				if( type === 'string') {
-				
-					//resolve the string variables $()
-					var value = json2json._resolveVariables(transform[prop],variables[i]);
-					
-					//finally resolve the object variables ${}
-					value = json2json._resolveObjects(value,obj);
-
-					//add to the object
-					nObj[name] = value;
-				} else if(type === 'function'){
-					//Call the function to get the object value
-					nObj[name] = transform[prop].call(obj,obj,variables[i]);
-
-				} else {
-					//Otherwise just all the object 
-					nObj[name] = transform[prop];
-				}
-
-			}
+			//Set the variables in the transform (for each variable combination)
+			var nObj = json2json._setVariable(obj,transform,variables[i],index,options);
 
 			//add the new object to the output array
-			out[out.length] = nObj;
+			out.push(nObj);
 		}
 
 		//return the output array
